@@ -20,9 +20,14 @@ class MapVC: UIViewController {
     @IBOutlet weak var mapkitView: MKMapView!
     @IBOutlet weak var addressLabel: UILabel!
     
+    @IBAction func goButton(_ sender: UIBarButtonItem) {
+        getDirections()
+    }
+    
     //Properties
     let locationManager = CLLocationManager()
     var previousLocation: CLLocation?
+    var directionsArray: [MKDirections] = []
 
     
     func checkLocationServices(){
@@ -84,6 +89,46 @@ class MapVC: UIViewController {
         
         return CLLocation(latitude: latitude, longitude: longitude)
     }
+    
+    func getDirections(){
+        guard let location = locationManager.location?.coordinate else{
+            return
+        }
+        
+        let request = createDirectionsRequest(from: location)
+        let directions = MKDirections(request: request)
+        resetMapView(withNew: directions)
+        
+        directions.calculate { (response, error) in
+            guard let response = response else {return}
+            for route in response.routes{
+                self.mapkitView.addOverlay(route.polyline)
+                self.mapkitView.setVisibleMapRect(route.polyline.boundingMapRect, animated: true)
+            }
+        }
+    }
+    
+    
+    func createDirectionsRequest(from coordinate: CLLocationCoordinate2D) -> MKDirections.Request{
+        
+        let startingLocation = MKPlacemark(coordinate: coordinate)
+        let destinationCoordinate = getCenterLocation(for: mapkitView).coordinate
+        let destination = MKPlacemark(coordinate: destinationCoordinate)
+        
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: startingLocation)
+        request.destination = MKMapItem(placemark: destination)
+        request.transportType = .automobile
+        request.requestsAlternateRoutes = true
+        return request
+    }
+    
+    func resetMapView(withNew directions: MKDirections){
+        guard let maps = mapkitView else{return}
+        maps.removeOverlays(maps.overlays)
+        directionsArray.append(directions)
+        let _ = directionsArray.map{ $0.cancel()}
+    }
 }
 
 extension MapVC: CLLocationManagerDelegate{
@@ -113,7 +158,7 @@ extension MapVC: MKMapViewDelegate{
         guard let previousLocation = self.previousLocation else{return}
         guard center.distance(from: previousLocation) > 50 else {return}
         self.previousLocation = center
-        
+        geoCoder.cancelGeocode()
         geoCoder.reverseGeocodeLocation(center) { [weak self] (placemarks, error) in
             guard let self = self else {return}
             
@@ -133,5 +178,12 @@ extension MapVC: MKMapViewDelegate{
                 self.addressLabel.text = "\(streetNum) \(streetName)"
             }
         }
+    }
+    
+    
+    func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+        let renderer = MKPolylineRenderer(overlay: overlay as! MKPolyline)
+        renderer.strokeColor = .red
+        return renderer
     }
 }
